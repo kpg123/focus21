@@ -1,0 +1,123 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  displayName  String
+  role         String   @default("viewer")
+  age          Int?
+  gender       String?
+  country      String?
+  languages    String   @default("[]")
+  balanceCents Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  channels         Channel[]
+  watchSessions    WatchSession[]
+  surveyResponses  SurveyResponse[]
+  surveyOffers     SurveyOffer[]
+}
+
+model Channel {
+  id          String   @id @default(cuid())
+  ownerId     String
+  name        String
+  platform    String
+  externalId  String
+  url         String?
+  verified    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  owner   User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  surveys Survey[]
+
+  @@unique([platform, externalId])
+  @@index([ownerId])
+}
+
+model WatchSession {
+  id             String   @id @default(cuid())
+  userId         String
+  platform       String
+  channelId      String
+  channelName    String
+  videoId        String?
+  videoTitle     String?
+  secondsWatched Int      @default(0)
+  isLive         Boolean  @default(false)
+  url            String
+  startedAt      DateTime
+  lastSeenAt     DateTime @default(now())
+  createdAt      DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, lastSeenAt])
+  @@index([userId, channelId])
+}
+
+model Survey {
+  id                String   @id @default(cuid())
+  channelId         String
+  title             String
+  description       String
+  status            String   @default("draft")
+  rewardCents       Int
+  estimatedMinutes  Int      @default(5)
+  maxResponses      Int?
+  responseCount     Int      @default(0)
+  questionsJson     String
+  targetingJson     String   @default("{}")
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  expiresAt         DateTime?
+
+  channel   Channel          @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  responses SurveyResponse[]
+  offers    SurveyOffer[]
+
+  @@index([status])
+  @@index([channelId])
+}
+
+model SurveyOffer {
+  id        String   @id @default(cuid())
+  surveyId  String
+  userId    String
+  status    String   @default("pending")
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+  seenAt    DateTime?
+  dismissedAt DateTime?
+
+  survey Survey @relation(fields: [surveyId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([surveyId, userId])
+  @@index([userId, status])
+}
+
+model SurveyResponse {
+  id          String   @id @default(cuid())
+  surveyId    String
+  userId      String
+  answersJson String
+  rewardCents Int
+  createdAt   DateTime @default(now())
+
+  survey Survey @relation(fields: [surveyId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([surveyId, userId])
+  @@index([surveyId])
+}
