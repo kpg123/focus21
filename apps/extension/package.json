@@ -1,0 +1,15 @@
+{
+  "name": "@focus21/extension",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "dev": "node build.mjs --watch",
+    "test": "tsx --test src/**/*.test.ts"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.1",
+    "tsx": "^4.19.3"
+  }
+}
