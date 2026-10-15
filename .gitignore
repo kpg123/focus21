@@ -10,6 +10,7 @@ build/
 coverage/
 *.log
 .turbo/
+*.tsbuildinfo
 apps/api/prisma/dev.db
 apps/extension/dist/
 apps/web/dist/
