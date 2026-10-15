@@ -43,6 +43,9 @@ export interface WatchHeartbeatPayload {
   isLive?: boolean;
   url: string;
   startedAt: string;
+  /** Stable id for one continuous play bout; new id = new backend session. */
+  clientSessionId?: string;
+  playing?: boolean;
 }
 
 export interface SurveyOffer {

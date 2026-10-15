@@ -1,24 +1,80 @@
 import { apiFetch, getSettings } from "./api";
 
-const statusEl = document.getElementById("status")!;
+const signedOut = document.getElementById("signedOut")!;
+const signedIn = document.getElementById("signedIn")!;
+const balanceEl = document.getElementById("balance")!;
+const greetingEl = document.getElementById("greeting")!;
 const emailInput = document.getElementById("email") as HTMLInputElement;
 const passwordInput = document.getElementById("password") as HTMLInputElement;
 const apiInput = document.getElementById("apiBase") as HTMLInputElement;
 const loginBtn = document.getElementById("login") as HTMLButtonElement;
 const logoutBtn = document.getElementById("logout") as HTMLButtonElement;
 const matchBtn = document.getElementById("match") as HTMLButtonElement;
-const statsEl = document.getElementById("stats")!;
+const authError = document.getElementById("authError")!;
+const matchNote = document.getElementById("matchNote")!;
+const nowTitle = document.getElementById("nowTitle")!;
+const nowMeta = document.getElementById("nowMeta")!;
+const nowState = document.getElementById("nowState")!;
+const todayMinutes = document.getElementById("todayMinutes")!;
+const sessionSeconds = document.getElementById("sessionSeconds")!;
+
+function showAuthError(message: string | null) {
+  if (!message) {
+    authError.hidden = true;
+    authError.textContent = "";
+    return;
+  }
+  authError.hidden = false;
+  authError.textContent = message;
+}
+
+function setNowTracking(active: {
+  playing: boolean;
+  context: {
+    channelName: string;
+    videoTitle?: string;
+    platform: string;
+  };
+  secondsSent: number;
+} | null) {
+  if (!active) {
+    nowTitle.textContent = "Nothing playing";
+    nowMeta.textContent = "Play a video on YouTube, Twitch, or Kick.";
+    nowState.textContent = "Idle";
+    nowState.className = "pill idle";
+    sessionSeconds.textContent = "0s";
+    return;
+  }
+
+  nowTitle.textContent =
+    active.context.videoTitle || active.context.channelName || "Watching";
+  nowMeta.textContent = `${active.context.channelName} · ${active.context.platform}`;
+  sessionSeconds.textContent = `${active.secondsSent}s`;
+
+  if (active.playing) {
+    nowState.textContent = "Playing";
+    nowState.className = "pill live";
+  } else {
+    nowState.textContent = "Paused";
+    nowState.className = "pill paused";
+  }
+}
+
+async function refreshActiveWatch() {
+  const response = await chrome.runtime.sendMessage({ type: "GET_ACTIVE_WATCH" });
+  setNowTracking(response?.activeWatch ?? null);
+}
 
 async function refresh() {
   const settings = await getSettings();
   apiInput.value = settings.apiBase;
+  showAuthError(null);
+  matchNote.hidden = true;
 
   if (!settings.token) {
-    statusEl.textContent = "Signed out";
-    statsEl.textContent = "Sign in to sync watch time and survey offers.";
-    loginBtn.hidden = false;
-    logoutBtn.hidden = true;
-    matchBtn.hidden = true;
+    signedOut.hidden = false;
+    signedIn.hidden = true;
+    balanceEl.hidden = true;
     return;
   }
 
@@ -31,45 +87,46 @@ async function refresh() {
       channels: Array<{ name: string; minutes: number }>;
     }>("/watch/stats");
 
-    statusEl.textContent = `${me.user.displayName} · $${(
-      me.user.balanceCents / 100
-    ).toFixed(2)}`;
-    const top = stats.channels
-      .slice(0, 3)
-      .map((c) => `${c.name} (${c.minutes}m)`)
-      .join(" · ");
-    statsEl.textContent = `Today: ${stats.totalMinutes} min${top ? ` — ${top}` : ""}`;
-    loginBtn.hidden = true;
-    logoutBtn.hidden = false;
-    matchBtn.hidden = false;
+    signedOut.hidden = true;
+    signedIn.hidden = false;
+    balanceEl.hidden = false;
+    balanceEl.textContent = `$${(me.user.balanceCents / 100).toFixed(2)}`;
+    greetingEl.textContent = me.user.displayName;
+    todayMinutes.textContent = `${stats.totalMinutes}m`;
+    await refreshActiveWatch();
   } catch (err) {
-    statusEl.textContent = "Session expired";
-    statsEl.textContent = err instanceof Error ? err.message : "Auth error";
-    loginBtn.hidden = false;
-    logoutBtn.hidden = true;
-    matchBtn.hidden = true;
+    signedOut.hidden = false;
+    signedIn.hidden = true;
+    balanceEl.hidden = true;
+    showAuthError(err instanceof Error ? err.message : "Session expired");
   }
 }
 
 loginBtn.addEventListener("click", async () => {
-  const apiBase = apiInput.value.replace(/\/$/, "") || "http://localhost:4000";
-  await chrome.storage.sync.set({ apiBase });
+  loginBtn.disabled = true;
+  showAuthError(null);
+  try {
+    const apiBase = apiInput.value.replace(/\/$/, "") || "http://localhost:4000";
+    await chrome.storage.sync.set({ apiBase });
 
-  const res = await fetch(`${apiBase}/auth/login`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      email: emailInput.value,
-      password: passwordInput.value,
-    }),
-  });
-  const data = await res.json();
-  if (!res.ok) {
-    statusEl.textContent = data.error || "Login failed";
-    return;
+    const res = await fetch(`${apiBase}/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: emailInput.value,
+        password: passwordInput.value,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      showAuthError(data.error || "Login failed");
+      return;
+    }
+    await chrome.storage.sync.set({ token: data.token, apiBase });
+    await refresh();
+  } finally {
+    loginBtn.disabled = false;
   }
-  await chrome.storage.sync.set({ token: data.token, apiBase });
-  await refresh();
 });
 
 logoutBtn.addEventListener("click", async () => {
@@ -78,21 +135,30 @@ logoutBtn.addEventListener("click", async () => {
 });
 
 matchBtn.addEventListener("click", async () => {
+  matchBtn.disabled = true;
+  matchNote.hidden = false;
+  matchNote.textContent = "Checking…";
   try {
-    const data = await apiFetch<{ offers: Array<{ title: string; rewardCents: number }> }>(
-      "/surveys/match",
-      { method: "POST", body: "{}" },
-    );
+    const data = await apiFetch<{
+      offers: Array<{ title: string; rewardCents: number }>;
+    }>("/surveys/match", { method: "POST", body: "{}" });
     if (!data.offers.length) {
-      statsEl.textContent = "No matching surveys right now.";
+      matchNote.textContent = "No matching surveys right now.";
       return;
     }
     const first = data.offers[0];
-    statsEl.textContent = `Matched: ${first.title} ($${(first.rewardCents / 100).toFixed(2)})`;
+    matchNote.textContent = `Matched: ${first.title} ($${(
+      first.rewardCents / 100
+    ).toFixed(2)})`;
     chrome.runtime.sendMessage({ type: "POLL_OFFERS" });
   } catch (err) {
-    statsEl.textContent = err instanceof Error ? err.message : "Match failed";
+    matchNote.textContent = err instanceof Error ? err.message : "Match failed";
+  } finally {
+    matchBtn.disabled = false;
   }
 });
 
 void refresh();
+setInterval(() => {
+  if (!signedIn.hidden) void refreshActiveWatch();
+}, 2000);

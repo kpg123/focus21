@@ -33,7 +33,7 @@ Load the unpacked extension from `apps/extension/dist` in Chrome (`chrome://exte
 ## How the loop works
 
 1. **Viewer** installs the extension and signs in.
-2. While watching YouTube / Twitch / Kick, the content script detects channel + media metadata and sends heartbeats every ~15s.
+2. While watching YouTube / Twitch / Kick, the extension tracks **only the last video the user pressed play on**. Paused media does not accrue time. Queued / multi-tab simultaneous playback is ignored — one active session at a time. Switching browser tabs is fine; each play bout gets its own `clientSessionId` session on the API.
 3. **Creators** register channels in the portal and publish surveys with targeting (daily watch minutes, age, gender, platforms, etc.).
 4. The API matches eligible viewers and creates survey offers.
 5. The extension shows an on-page popup (and a system notification). Completing a survey credits the viewer balance.

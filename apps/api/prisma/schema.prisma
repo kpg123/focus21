@@ -46,22 +46,24 @@ model Channel {
 }
 
 model WatchSession {
-  id             String   @id @default(cuid())
-  userId         String
-  platform       String
-  channelId      String
-  channelName    String
-  videoId        String?
-  videoTitle     String?
-  secondsWatched Int      @default(0)
-  isLive         Boolean  @default(false)
-  url            String
-  startedAt      DateTime
-  lastSeenAt     DateTime @default(now())
-  createdAt      DateTime @default(now())
+  id              String   @id @default(cuid())
+  userId          String
+  platform        String
+  channelId       String
+  channelName     String
+  videoId         String?
+  videoTitle      String?
+  secondsWatched  Int      @default(0)
+  isLive          Boolean  @default(false)
+  url             String
+  clientSessionId String?
+  startedAt       DateTime
+  lastSeenAt      DateTime @default(now())
+  createdAt       DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@index([userId, clientSessionId])
   @@index([userId, lastSeenAt])
   @@index([userId, channelId])
 }

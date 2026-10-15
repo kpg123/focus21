@@ -7,6 +7,32 @@
   font-family: Figtree, Segoe UI, sans-serif;
 }
 
+.focus21-chip {
+  pointer-events: none;
+  position: fixed;
+  left: 16px;
+  bottom: 16px;
+  max-width: min(320px, calc(100vw - 32px));
+  padding: 8px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  color: #e8eef5;
+  background: rgba(10, 16, 24, 0.88);
+  border: 1px solid rgba(155, 225, 93, 0.35);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  animation: focus21-slide 320ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.focus21-chip[data-state="paused"] {
+  border-color: rgba(255, 180, 84, 0.45);
+  color: #ffd9a8;
+}
+
 .focus21-offer {
   pointer-events: auto;
   position: fixed;

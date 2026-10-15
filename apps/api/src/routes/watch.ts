@@ -13,59 +13,108 @@ const heartbeatSchema = z.object({
   isLive: z.boolean().optional(),
   url: z.string().url(),
   startedAt: z.string().datetime(),
+  clientSessionId: z.string().min(4).max(80).optional(),
+  playing: z.boolean().optional(),
 });
 
 export async function watchRoutes(app: FastifyInstance) {
-  app.post("/watch/heartbeat", { preHandler: authenticate }, async (request) => {
+  app.post("/watch/heartbeat", { preHandler: authenticate }, async (request, reply) => {
     const body = heartbeatSchema.parse(request.body);
-    const startedAt = new Date(body.startedAt);
-    const windowStart = new Date(Date.now() - 15 * 60 * 1000);
 
-    const existing = await prisma.watchSession.findFirst({
-      where: {
-        userId: request.user.id,
-        platform: body.platform,
-        channelId: body.channelId,
-        videoId: body.videoId ?? null,
-        lastSeenAt: { gte: windowStart },
-      },
-      orderBy: { lastSeenAt: "desc" },
-    });
+    // Extension should only send while playing; reject paused ticks defensively.
+    if (body.playing === false) {
+      return reply.code(400).send({ error: "Paused playback is not tracked" });
+    }
 
     let session;
-    if (existing) {
-      session = await prisma.watchSession.update({
-        where: { id: existing.id },
-        data: {
-          secondsWatched: existing.secondsWatched + body.secondsWatched,
-          lastSeenAt: new Date(),
-          videoTitle: body.videoTitle ?? existing.videoTitle,
-          channelName: body.channelName,
-          url: body.url,
-          isLive: body.isLive ?? existing.isLive,
+
+    if (body.clientSessionId) {
+      const existing = await prisma.watchSession.findFirst({
+        where: {
+          userId: request.user.id,
+          clientSessionId: body.clientSessionId,
         },
       });
+
+      if (existing) {
+        session = await prisma.watchSession.update({
+          where: { id: existing.id },
+          data: {
+            secondsWatched: existing.secondsWatched + body.secondsWatched,
+            lastSeenAt: new Date(),
+            videoTitle: body.videoTitle ?? existing.videoTitle,
+            channelName: body.channelName,
+            url: body.url,
+            isLive: body.isLive ?? existing.isLive,
+          },
+        });
+      } else {
+        session = await prisma.watchSession.create({
+          data: {
+            userId: request.user.id,
+            platform: body.platform,
+            channelId: body.channelId,
+            channelName: body.channelName,
+            videoId: body.videoId,
+            videoTitle: body.videoTitle,
+            secondsWatched: body.secondsWatched,
+            isLive: body.isLive ?? false,
+            url: body.url,
+            clientSessionId: body.clientSessionId,
+            startedAt: new Date(body.startedAt),
+            lastSeenAt: new Date(),
+          },
+        });
+      }
     } else {
-      session = await prisma.watchSession.create({
-        data: {
+      // Legacy fallback: merge recent same-video heartbeats.
+      const windowStart = new Date(Date.now() - 15 * 60 * 1000);
+      const existing = await prisma.watchSession.findFirst({
+        where: {
           userId: request.user.id,
           platform: body.platform,
           channelId: body.channelId,
-          channelName: body.channelName,
-          videoId: body.videoId,
-          videoTitle: body.videoTitle,
-          secondsWatched: body.secondsWatched,
-          isLive: body.isLive ?? false,
-          url: body.url,
-          startedAt,
-          lastSeenAt: new Date(),
+          videoId: body.videoId ?? null,
+          lastSeenAt: { gte: windowStart },
         },
+        orderBy: { lastSeenAt: "desc" },
       });
+
+      if (existing) {
+        session = await prisma.watchSession.update({
+          where: { id: existing.id },
+          data: {
+            secondsWatched: existing.secondsWatched + body.secondsWatched,
+            lastSeenAt: new Date(),
+            videoTitle: body.videoTitle ?? existing.videoTitle,
+            channelName: body.channelName,
+            url: body.url,
+            isLive: body.isLive ?? existing.isLive,
+          },
+        });
+      } else {
+        session = await prisma.watchSession.create({
+          data: {
+            userId: request.user.id,
+            platform: body.platform,
+            channelId: body.channelId,
+            channelName: body.channelName,
+            videoId: body.videoId,
+            videoTitle: body.videoTitle,
+            secondsWatched: body.secondsWatched,
+            isLive: body.isLive ?? false,
+            url: body.url,
+            startedAt: new Date(body.startedAt),
+            lastSeenAt: new Date(),
+          },
+        });
+      }
     }
 
     return {
       session: {
         id: session.id,
+        clientSessionId: session.clientSessionId,
         secondsWatched: session.secondsWatched,
         channelName: session.channelName,
         platform: session.platform,
@@ -115,6 +164,7 @@ export async function watchRoutes(app: FastifyInstance) {
       })),
       recentSessions: sessions.slice(0, 20).map((s) => ({
         id: s.id,
+        clientSessionId: s.clientSessionId,
         platform: s.platform,
         channelName: s.channelName,
         videoTitle: s.videoTitle,
