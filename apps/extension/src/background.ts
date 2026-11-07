@@ -4,6 +4,7 @@ import {
   claimPlayback,
   clearIfTab,
   heartbeatSeconds,
+  mediaKey,
   pauseIfActive,
   type ActiveWatch,
 } from "./session";
@@ -115,7 +116,7 @@ async function verifyActiveStillPlaying() {
     if (response.context) {
       // Refresh metadata but do not steal session unless media identity changed.
       const ctx = response.context as WatchContext;
-      const key = `${ctx.platform}:${ctx.channelId}:${ctx.videoId ?? ctx.url}`;
+      const key = mediaKey(ctx);
       if (key === activeWatch.mediaKey) {
         activeWatch = { ...activeWatch, context: ctx, playing: true };
         await persistActive();

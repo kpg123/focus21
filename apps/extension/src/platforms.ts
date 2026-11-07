@@ -1,3 +1,12 @@
+import {
+  extractFromInitialData,
+  extractFromPlayerResponse,
+  looksLikeChannelName,
+  mergeChannelInfo,
+  parseChannelHref,
+  type YouTubeChannelInfo,
+} from "./youtube";
+
 export type Platform = "youtube" | "twitch" | "kick" | "other";
 
 export interface WatchContext {
@@ -22,12 +31,49 @@ function text(el: Element | null | undefined): string {
   return (el?.textContent || "").trim();
 }
 
-export function extractYouTube(): WatchContext | null {
-  const url = location.href;
-  if (!url.includes("/watch") && !url.includes("/live") && !url.includes("/shorts/")) {
-    return null;
-  }
+function readGlobalJson(name: string): unknown {
+  const w = window as unknown as Record<string, unknown>;
+  if (w[name]) return w[name];
 
+  // Fallback: scrape assigned script blobs YouTube embeds on first paint.
+  const scripts = document.querySelectorAll("script");
+  for (const script of scripts) {
+    const body = script.textContent || "";
+    if (!body.includes(name)) continue;
+    const marker = `${name} = `;
+    const idx = body.indexOf(marker);
+    if (idx === -1) continue;
+    const start = body.indexOf("{", idx);
+    if (start === -1) continue;
+    try {
+      // Balance braces roughly for the assigned object.
+      let depth = 0;
+      let end = -1;
+      for (let i = start; i < body.length; i++) {
+        const ch = body[i];
+        if (ch === "{") depth++;
+        else if (ch === "}") {
+          depth--;
+          if (depth === 0) {
+            end = i + 1;
+            break;
+          }
+        }
+      }
+      if (end > start) return JSON.parse(body.slice(start, end));
+    } catch {
+      // keep scanning
+    }
+  }
+  return null;
+}
+
+function extractYouTubeFromDom(): {
+  videoId?: string;
+  videoTitle?: string;
+  isLive?: boolean;
+  channel: YouTubeChannelInfo | null;
+} {
   const params = new URLSearchParams(location.search);
   const videoId =
     params.get("v") ||
@@ -37,38 +83,88 @@ export function extractYouTube(): WatchContext | null {
 
   const videoTitle =
     text(document.querySelector("h1.ytd-watch-metadata yt-formatted-string")) ||
+    text(document.querySelector("h1.ytd-watch-metadata")) ||
+    text(document.querySelector("h1.title yt-formatted-string")) ||
     text(document.querySelector("h1.title")) ||
     document.title.replace(/ - YouTube$/, "");
 
+  // Prefer the owner name link — never the avatar <a>, which has an href but no text.
   const channelAnchor =
     document.querySelector<HTMLAnchorElement>(
-      "ytd-channel-name a, #channel-name a, ytd-video-owner-renderer a",
+      [
+        "ytd-video-owner-renderer #channel-name a",
+        "ytd-watch-metadata ytd-channel-name a",
+        "#upload-info #channel-name a",
+        "#owner #channel-name a",
+        "ytd-channel-name#channel-name a",
+        "#channel-name a",
+      ].join(", "),
     ) || null;
 
-  const channelName =
-    text(channelAnchor) ||
-    text(document.querySelector("#owner-name a")) ||
-    "Unknown channel";
+  const href =
+    channelAnchor?.getAttribute("href") ||
+    document
+      .querySelector<HTMLAnchorElement>("ytd-video-owner-renderer a[href*='/@'], ytd-video-owner-renderer a[href*='/channel/']")
+      ?.getAttribute("href") ||
+    "";
 
-  let channelId = "unknown";
-  const href = channelAnchor?.getAttribute("href") || "";
-  const channelMatch =
-    href.match(/\/channel\/([^/?]+)/) ||
-    href.match(/\/@([^/?]+)/) ||
-    href.match(/\/c\/([^/?]+)/) ||
-    href.match(/\/user\/([^/?]+)/);
-  if (channelMatch) channelId = channelMatch[1];
+  const parsed = parseChannelHref(href);
+  const rawName =
+    text(channelAnchor) ||
+    text(document.querySelector("ytd-video-owner-renderer #channel-name")) ||
+    text(document.querySelector("#channel-name yt-formatted-string")) ||
+    text(document.querySelector("#owner-name a"));
+
+  const channelName = looksLikeChannelName(rawName)
+    ? rawName
+    : parsed.handle || "";
+
+  const channel = mergeChannelInfo({
+    channelId: parsed.channelId || parsed.handle || "unknown",
+    channelName: channelName || "Unknown channel",
+    handle: parsed.handle,
+    url: href
+      ? href.startsWith("http")
+        ? href
+        : `https://www.youtube.com${href}`
+      : undefined,
+  });
 
   const isLive = Boolean(
     document.querySelector(".ytp-live, .badge-style-type-live-now-alternate"),
   );
 
-  if (!videoId && channelId === "unknown") return null;
+  return { videoId, videoTitle, isLive, channel };
+}
+
+export function extractYouTube(): WatchContext | null {
+  const url = location.href;
+  if (!url.includes("/watch") && !url.includes("/live") && !url.includes("/shorts/")) {
+    return null;
+  }
+
+  const fromPlayer = extractFromPlayerResponse(
+    readGlobalJson("ytInitialPlayerResponse"),
+  );
+  const fromData = extractFromInitialData(readGlobalJson("ytInitialData"));
+  const fromDom = extractYouTubeFromDom();
+
+  const channel = mergeChannelInfo(
+    fromPlayer?.channel,
+    fromData,
+    fromDom.channel,
+  );
+
+  const videoId = fromPlayer?.videoId || fromDom.videoId;
+  const videoTitle = fromPlayer?.videoTitle || fromDom.videoTitle;
+  const isLive = fromPlayer?.isLive ?? fromDom.isLive;
+
+  if (!videoId && (!channel || channel.channelId === "unknown")) return null;
 
   return {
     platform: "youtube",
-    channelId,
-    channelName,
+    channelId: channel?.channelId || "unknown",
+    channelName: channel?.channelName || "Unknown channel",
     videoId,
     videoTitle,
     isLive,
@@ -81,7 +177,6 @@ export function extractTwitch(): WatchContext | null {
   const parts = location.pathname.split("/").filter(Boolean);
   if (!parts.length) return null;
 
-  // Skip directory / settings style pages
   const blocked = new Set([
     "directory",
     "videos",
@@ -95,8 +190,9 @@ export function extractTwitch(): WatchContext | null {
   if (blocked.has(parts[0])) return null;
 
   const channelId = parts[0].toLowerCase();
+  // Stream title is NOT the channel name — prefer login/display from the page header.
   const channelName =
-    text(document.querySelector("h1[data-a-target='stream-title']")) ||
+    text(document.querySelector("[data-a-target='user-channel-header-name']")) ||
     text(document.querySelector("h1.tw-title")) ||
     channelId;
 
@@ -127,17 +223,18 @@ export function extractKick(): WatchContext | null {
 
   const channelId = parts[0].toLowerCase();
   const channelName =
-    text(document.querySelector("h1")) ||
+    text(document.querySelector("a[href='/" + parts[0] + "']")) ||
     text(document.querySelector("[class*='username']")) ||
     channelId;
   const videoTitle =
-    text(document.querySelector("[class*='stream-title'], h3, h2")) ||
+    text(document.querySelector("[class*='stream-title']")) ||
+    text(document.querySelector("h3")) ||
     document.title.replace(/ \| Kick$/, "");
 
   return {
     platform: "kick",
     channelId,
-    channelName,
+    channelName: looksLikeChannelName(channelName) ? channelName : channelId,
     videoTitle,
     isLive: true,
     url: location.href,

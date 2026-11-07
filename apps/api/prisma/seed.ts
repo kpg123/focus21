@@ -46,8 +46,10 @@ async function main() {
       name: "Nova Streams",
       platform: "youtube",
       externalId: "UC_nova_demo",
+      handle: "novastreams",
       url: "https://www.youtube.com/@novastreams",
       verified: true,
+      source: "owner",
     },
   });
 

@@ -12,7 +12,9 @@ export interface ActiveWatch {
 }
 
 export function mediaKey(ctx: WatchContext): string {
-  return `${ctx.platform}:${ctx.channelId}:${ctx.videoId ?? ctx.url}`;
+  // Prefer video identity so late-hydrated channel metadata doesn't split a session.
+  if (ctx.videoId) return `${ctx.platform}:video:${ctx.videoId}`;
+  return `${ctx.platform}:channel:${ctx.channelId}:${ctx.url}`;
 }
 
 export function newClientSessionId(): string {

@@ -11,7 +11,8 @@ let lastMediaKey = "";
 let listenersBound = false;
 
 function mediaKey(ctx: WatchContext): string {
-  return `${ctx.platform}:${ctx.channelId}:${ctx.videoId ?? ctx.url}`;
+  if (ctx.videoId) return `${ctx.platform}:video:${ctx.videoId}`;
+  return `${ctx.platform}:channel:${ctx.channelId}:${ctx.url}`;
 }
 
 function reportPlayback(playing: boolean, reason: string) {

@@ -29,20 +29,24 @@ model User {
 
 model Channel {
   id          String   @id @default(cuid())
-  ownerId     String
+  ownerId     String?
   name        String
   platform    String
   externalId  String
+  handle      String?
   url         String?
   verified    Boolean  @default(false)
+  /// owner = registered by a creator; discovery = upserted from watch heartbeats
+  source      String   @default("owner")
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  owner   User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  owner   User?    @relation(fields: [ownerId], references: [id], onDelete: SetNull)
   surveys Survey[]
 
   @@unique([platform, externalId])
   @@index([ownerId])
+  @@index([platform, handle])
 }
 
 model WatchSession {

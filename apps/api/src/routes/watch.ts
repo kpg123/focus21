@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { authenticate } from "../auth.js";
+import { findOrCreateChannel, isUsableChannelName } from "../channels/catalog.js";
 import { prisma } from "../db.js";
 
 const heartbeatSchema = z.object({
@@ -26,6 +27,26 @@ export async function watchRoutes(app: FastifyInstance) {
       return reply.code(400).send({ error: "Paused playback is not tracked" });
     }
 
+    const catalog = await findOrCreateChannel({
+      platform: body.platform,
+      externalId: body.channelId,
+      name: body.channelName,
+      url: body.url.includes("youtube.com")
+        ? body.channelId.startsWith("UC")
+          ? `https://www.youtube.com/channel/${body.channelId}`
+          : `https://www.youtube.com/@${body.channelId.replace(/^@/, "")}`
+        : body.url,
+      handle: body.channelId.startsWith("UC") ? null : body.channelId,
+    });
+
+    const channelId = catalog?.externalId ?? body.channelId;
+    const channelName =
+      catalog?.name && isUsableChannelName(catalog.name)
+        ? catalog.name
+        : isUsableChannelName(body.channelName)
+          ? body.channelName
+          : channelId;
+
     let session;
 
     if (body.clientSessionId) {
@@ -43,7 +64,8 @@ export async function watchRoutes(app: FastifyInstance) {
             secondsWatched: existing.secondsWatched + body.secondsWatched,
             lastSeenAt: new Date(),
             videoTitle: body.videoTitle ?? existing.videoTitle,
-            channelName: body.channelName,
+            channelId,
+            channelName,
             url: body.url,
             isLive: body.isLive ?? existing.isLive,
           },
@@ -53,8 +75,8 @@ export async function watchRoutes(app: FastifyInstance) {
           data: {
             userId: request.user.id,
             platform: body.platform,
-            channelId: body.channelId,
-            channelName: body.channelName,
+            channelId,
+            channelName,
             videoId: body.videoId,
             videoTitle: body.videoTitle,
             secondsWatched: body.secondsWatched,
@@ -73,7 +95,7 @@ export async function watchRoutes(app: FastifyInstance) {
         where: {
           userId: request.user.id,
           platform: body.platform,
-          channelId: body.channelId,
+          channelId,
           videoId: body.videoId ?? null,
           lastSeenAt: { gte: windowStart },
         },
@@ -87,7 +109,7 @@ export async function watchRoutes(app: FastifyInstance) {
             secondsWatched: existing.secondsWatched + body.secondsWatched,
             lastSeenAt: new Date(),
             videoTitle: body.videoTitle ?? existing.videoTitle,
-            channelName: body.channelName,
+            channelName,
             url: body.url,
             isLive: body.isLive ?? existing.isLive,
           },
@@ -97,8 +119,8 @@ export async function watchRoutes(app: FastifyInstance) {
           data: {
             userId: request.user.id,
             platform: body.platform,
-            channelId: body.channelId,
-            channelName: body.channelName,
+            channelId,
+            channelName,
             videoId: body.videoId,
             videoTitle: body.videoTitle,
             secondsWatched: body.secondsWatched,
@@ -117,7 +139,9 @@ export async function watchRoutes(app: FastifyInstance) {
         clientSessionId: session.clientSessionId,
         secondsWatched: session.secondsWatched,
         channelName: session.channelName,
+        channelId: session.channelId,
         platform: session.platform,
+        catalogChannelId: catalog?.id ?? null,
       },
     };
   });
@@ -166,6 +190,7 @@ export async function watchRoutes(app: FastifyInstance) {
         id: s.id,
         clientSessionId: s.clientSessionId,
         platform: s.platform,
+        channelId: s.channelId,
         channelName: s.channelName,
         videoTitle: s.videoTitle,
         secondsWatched: s.secondsWatched,

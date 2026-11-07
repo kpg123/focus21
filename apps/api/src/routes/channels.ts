@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { authenticate } from "../auth.js";
+import { normalizeExternalId } from "../channels/catalog.js";
 import { prisma } from "../db.js";
 
 const channelSchema = z.object({
@@ -24,6 +25,7 @@ export async function channelRoutes(app: FastifyInstance) {
 
   app.post("/channels", { preHandler: authenticate }, async (request, reply) => {
     const body = channelSchema.parse(request.body);
+    const externalId = normalizeExternalId(body.externalId);
     const user = await prisma.user.findUniqueOrThrow({
       where: { id: request.user.id },
     });
@@ -35,20 +37,45 @@ export async function channelRoutes(app: FastifyInstance) {
       });
     }
 
-    try {
-      const channel = await prisma.channel.create({
-        data: {
-          ownerId: request.user.id,
-          name: body.name,
+    const existing = await prisma.channel.findUnique({
+      where: {
+        platform_externalId: {
           platform: body.platform,
-          externalId: body.externalId,
-          url: body.url,
+          externalId,
         },
-      });
-      return reply.code(201).send({ channel });
-    } catch {
+      },
+    });
+
+    if (existing?.ownerId && existing.ownerId !== request.user.id) {
       return reply.code(409).send({ error: "Channel already registered" });
     }
+
+    // Claim a discovery catalog row, or create a fresh owned channel.
+    const channel = existing
+      ? await prisma.channel.update({
+          where: { id: existing.id },
+          data: {
+            ownerId: request.user.id,
+            name: body.name,
+            url: body.url ?? existing.url,
+            source: "owner",
+            verified: existing.verified,
+            handle: existing.handle || (!externalId.startsWith("UC") ? externalId : existing.handle),
+          },
+        })
+      : await prisma.channel.create({
+          data: {
+            ownerId: request.user.id,
+            name: body.name,
+            platform: body.platform,
+            externalId,
+            url: body.url,
+            source: "owner",
+            handle: externalId.startsWith("UC") ? null : externalId,
+          },
+        });
+
+    return reply.code(existing ? 200 : 201).send({ channel });
   });
 
   app.get("/channels/:id", { preHandler: authenticate }, async (request, reply) => {
