@@ -1,0 +1,22 @@
+{
+  "name": "focus21",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Watch-time tracking and paid survey platform for creators",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspaces --if-present",
+    "dev:api": "npm run dev -w @focus21/api",
+    "dev:web": "npm run dev -w @focus21/web",
+    "build": "npm run build --workspaces --if-present",
+    "db:push": "npm run db:push -w @focus21/api",
+    "db:seed": "npm run db:seed -w @focus21/api",
+    "test": "npm run test --workspaces --if-present"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

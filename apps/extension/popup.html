@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Focus21</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=Syne:wght@700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <div class="shell">
+      <header class="top">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true"></span>
+          <span>Focus21</span>
+        </div>
+        <div id="balance" class="balance" hidden>$0.00</div>
+      </header>
+
+      <section id="signedOut" class="panel">
+        <h1>Earn while you watch</h1>
+        <p class="lede">
+          Sign in to track one active stream at a time and unlock paid surveys.
+        </p>
+        <label>
+          Email
+          <input id="email" type="email" autocomplete="username" placeholder="you@email.com" />
+        </label>
+        <label>
+          Password
+          <input
+            id="password"
+            type="password"
+            autocomplete="current-password"
+            placeholder="••••••••"
+          />
+        </label>
+        <details class="advanced">
+          <summary>Advanced</summary>
+          <label>
+            API base
+            <input id="apiBase" type="url" value="http://localhost:4000" />
+          </label>
+        </details>
+        <p id="authError" class="error" hidden></p>
+        <button id="login" class="btn primary" type="button">Sign in</button>
+      </section>
+
+      <section id="signedIn" hidden>
+        <div class="panel hero-panel">
+          <div class="eyebrow" id="greeting">Signed in</div>
+          <div class="now-label">Now tracking</div>
+          <div id="nowTitle" class="now-title">Nothing playing</div>
+          <div id="nowMeta" class="now-meta">Play a video on YouTube, Twitch, or Kick.</div>
+          <div id="nowState" class="pill idle">Idle</div>
+        </div>
+
+        <div class="stats-row">
+          <div class="stat">
+            <div class="stat-label">Today</div>
+            <div id="todayMinutes" class="stat-value">0m</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Session</div>
+            <div id="sessionSeconds" class="stat-value">0s</div>
+          </div>
+        </div>
+
+        <p class="hint">
+          Only the last video you press play on is tracked — paused or queued tabs
+          do not earn time. Switching browser tabs is fine.
+        </p>
+
+        <div class="actions">
+          <button id="match" class="btn primary" type="button">Check surveys</button>
+          <button id="logout" class="btn ghost" type="button">Sign out</button>
+        </div>
+        <p id="matchNote" class="note" hidden></p>
+      </section>
+    </div>
+    <script type="module" src="popup.js"></script>
+  </body>
+</html>
